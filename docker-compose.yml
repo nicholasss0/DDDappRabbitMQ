@@ -1,0 +1,87 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres_db
+    environment:
+      POSTGRES_DB: contacts_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  ddd-api:
+    build:
+      context: ./miniDDDAPI
+      dockerfile: Dockerfile
+    container_name: ddd_api
+    ports:
+      - "3003:3003"
+    environment:
+      - DOCKER_ENV=true
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3003/ddds"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  contacts-api:
+    build:
+      context: ./contacts_service
+      dockerfile: Dockerfile
+    container_name: contacts_api
+    ports:
+      - "3004:3004"
+    environment:
+      - DOCKER_ENV=true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      ddd-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3004/contacts/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  frontend:
+    build:
+      context: ./ddd_app_Frontend
+      dockerfile: Dockerfile
+    container_name: frontend_app
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      
+volumes:
+  postgres_data:
